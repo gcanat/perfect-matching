@@ -1,0 +1,15 @@
+[package]
+name = "perfect-matching"
+version = "0.1.0"
+edition = "2024"
+authors = ["guillaume canat <gui.canat@gmail.com>"]
+description = "linear sum assignment solvers"
+readme = "README.md"
+repository = "https://github.com/gcanat/perfect-matching/"
+license = "MIT"
+keywords = ["lsap", "linearsumassignment", "jonker-volgenant"]
+
+[dependencies]
+bytemuck = "1.25.0"
+num-traits = "0.2.19"
+pulp = "0.20"
