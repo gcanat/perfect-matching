@@ -11,7 +11,7 @@ on:
     branches: [main]
 
 jobs:
-  rustfmt:
+  fmt_and_clippy:
     name: rustfmt
     runs-on: ubuntu-latest
 
