@@ -1,6 +1,9 @@
 // Scaling factor for epsilon
 const ALPHA: f32 = 7.0;
 
+// Minimum epsilon threshold
+const MIN_EPS_THRESH: f32 = 1e-7;
+
 /// Helper function to find the min and max value in the profit vec in a single
 /// pass.
 fn find_max(profit: &[f32]) -> f32 {
@@ -14,11 +17,31 @@ fn find_max(profit: &[f32]) -> f32 {
 }
 
 /// Struct holding the variables needed for the Cost Scaling Auction algorithm.
+/// Goldberg-Kennedy Cost Scaling Auction Algorithm
+/// ================================================
+/// Solves the Linear Sum Assignment Problem (LSAP):
+///   Minimize  sum_ij  cost[i][j] * x[i][j]
+///   s.t.      each row i assigned to exactly one column j
+///             each column j assigned to exactly one row i
+///             x[i][j] in {0, 1}
+///
+/// Core idea
+/// ---------
+/// Prices p[j] are maintained for each column (object/item).
+/// Each row (bidder) computes its "best value" and bids up the price of its
+/// favourite column. Epsilon-complementary slackness (Epsilon-CS) is
+/// maintained throughout: for every assignment (i->j),
+///   cost[i][j] - p[j]  >=  max_k (cost[i][k] - p[k]) - epsilon
+///
+/// A full auction round (phase) works at a fixed epsilon.
+/// epsilon is divided by `ALPHA` each phase until epsilon < min(1/n^2, 1e-6à),
+/// guaranteeing integer optimality.
 struct Auctioner {
     profit: Vec<f32>,
     prices: Vec<f32>,
     row4col: Vec<usize>,
     col4row: Vec<usize>,
+    unassigned: Vec<usize>,
     n: usize,
     epsilon: f32,
 }
@@ -31,6 +54,7 @@ impl Auctioner {
         let prices: Vec<f32> = vec![0_f32; n];
         let row4col: Vec<usize> = vec![usize::MAX; n];
         let col4row: Vec<usize> = vec![usize::MAX; n];
+        let unassigned: Vec<usize> = Vec::from_iter(0..n);
         let epsilon = match epsilon {
             Some(eps) => eps,
             None => {
@@ -43,6 +67,7 @@ impl Auctioner {
             prices,
             row4col,
             col4row,
+            unassigned,
             n,
             epsilon,
         }
@@ -94,14 +119,18 @@ impl Auctioner {
         // reset assignments
         self.row4col.fill(usize::MAX);
         self.col4row.fill(usize::MAX);
-        let mut unassigned: Vec<usize> = (0..self.n).collect();
-        while !unassigned.is_empty() {
-            if let Some(row) = unassigned.pop() {
+        self.unassigned.clear();
+        self.unassigned.extend(0..self.n);
+        let max_iter = self.n * 100;
+        let mut iter = 0;
+        while !self.unassigned.is_empty() && (iter < max_iter) {
+            if let Some(row) = self.unassigned.pop() {
                 let evicted = self.bid_and_assign(row);
                 if evicted != usize::MAX {
-                    unassigned.push(evicted);
+                    self.unassigned.push(evicted);
                 }
             }
+            iter += 1;
         }
     }
 
@@ -109,10 +138,10 @@ impl Auctioner {
     /// until `epsilon` is small enough.
     fn solve(self: &mut Auctioner) {
         let nn = (self.n as f32).powi(2);
-        let eps_thresh = (1e-6_f32).min(1.0 / nn);
+        let eps_thresh = (MIN_EPS_THRESH).max(1.0 / nn);
         while self.epsilon >= eps_thresh {
             self.run_phase();
-            self.epsilon /= ALPHA
+            self.epsilon /= ALPHA;
         }
     }
 }
