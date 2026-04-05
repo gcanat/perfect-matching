@@ -1,3 +1,24 @@
+//! Goldberg-Kennedy Cost Scaling Auction Algorithm
+//! ================================================
+//! Solves the Linear Sum Assignment Problem (LSAP):
+//!   Minimize  `sum_ij cost[i][j] * x[i][j]`.
+//!
+//!   Constraints:
+//!   - each row `i` assigned to exactly one column `j`
+//!   - each column `j` assigned to exactly one row `i`
+//!   - `x[i][j]` in `{0, 1}`
+//!
+//! Core idea
+//! ---------
+//! Prices `p[j]` are maintained for each column (object/item).
+//! Each row (bidder) computes its "best value" and bids up the price of its
+//! favourite column. Epsilon-complementary slackness (Epsilon-CS) is
+//! maintained throughout: for every assignment (`i -> j`),
+//!  `cost[i][j] - p[j]  >=  max_k (cost[i][k] - p[k]) - epsilon`
+//!
+//! A full auction round (phase) works at a fixed epsilon.
+//! epsilon is divided by `ALPHA` each phase until `epsilon < min(1/n^2, 1e-6)`
+
 // Scaling factor for epsilon
 const ALPHA: f32 = 7.0;
 
@@ -17,25 +38,6 @@ fn find_max(profit: &[f32]) -> f32 {
 }
 
 /// Struct holding the variables needed for the Cost Scaling Auction algorithm.
-/// Goldberg-Kennedy Cost Scaling Auction Algorithm
-/// ================================================
-/// Solves the Linear Sum Assignment Problem (LSAP):
-///   Minimize  sum_ij  cost[i][j] * x[i][j]
-///   s.t.      each row i assigned to exactly one column j
-///             each column j assigned to exactly one row i
-///             x[i][j] in {0, 1}
-///
-/// Core idea
-/// ---------
-/// Prices p[j] are maintained for each column (object/item).
-/// Each row (bidder) computes its "best value" and bids up the price of its
-/// favourite column. Epsilon-complementary slackness (Epsilon-CS) is
-/// maintained throughout: for every assignment (i->j),
-///   cost[i][j] - p[j]  >=  max_k (cost[i][k] - p[k]) - epsilon
-///
-/// A full auction round (phase) works at a fixed epsilon.
-/// epsilon is divided by `ALPHA` each phase until epsilon < min(1/n^2, 1e-6à),
-/// guaranteeing integer optimality.
 struct Auctioner {
     profit: Vec<f32>,
     prices: Vec<f32>,
