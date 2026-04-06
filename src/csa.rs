@@ -17,7 +17,7 @@
 //!  `cost[i][j] - p[j]  >=  max_k (cost[i][k] - p[k]) - epsilon`
 //!
 //! A full auction round (phase) works at a fixed epsilon.
-//! epsilon is divided by `ALPHA` each phase until `epsilon < min(1/n^2, 1e-6)`
+//! epsilon is divided by `ALPHA` each phase until `epsilon < max(1/n^2, 1e-6)`
 
 use bytemuck::cast_slice;
 use pulp::{Arch, Simd, WithSimd};
@@ -28,16 +28,26 @@ const ALPHA: f32 = 7.0;
 // Minimum epsilon threshold
 const MIN_EPS_THRESH: f32 = 1e-7;
 
-/// Helper function to find the min and max value in the profit vec in a single
-/// pass.
-fn find_max(profit: &[f32]) -> f32 {
-    let mut max = f32::MIN;
-    for value in profit.iter() {
-        if value > &max {
-            max = *value;
+/// Create the profit vec and compute the maximum value from the cost vec.
+/// If nrow < ncol, dummy rows (with very low profit) are appended to make
+/// the profit matrix square (ncol x ncol), so the auction always operates
+/// on a square problem.
+fn create_profit_vec(cost: &[f32], nrow: usize, ncol: usize) -> (Vec<f32>, f32) {
+    let mut profit = Vec::with_capacity(ncol * ncol);
+    let mut max_profit = f32::MIN;
+    for v in cost.iter() {
+        let neg_val = -v;
+        profit.push(neg_val);
+        let abs_val = neg_val.abs();
+        if (abs_val < f32::MAX) && (abs_val > max_profit) {
+            max_profit = abs_val;
         }
     }
-    max
+    if nrow < ncol {
+        let fill_val = (max_profit + 1_f32) * -100.0;
+        profit.extend(vec![fill_val; (ncol - nrow) * ncol]);
+    }
+    (profit, max_profit)
 }
 
 /// Struct holding the variables needed for the Cost Scaling Auction algorithm.
@@ -52,20 +62,18 @@ struct Auctioner {
 }
 
 impl Auctioner {
-    /// Create a new `Auctioner` given a `cost` vector, the number of rows `n` and
+    /// Create a new `Auctioner` given a `cost` vector, the number of rows and cols
     /// an optional `epsilon` start value.
-    fn new(cost: &[f32], n: usize, epsilon: Option<f32>) -> Self {
-        let profit: Vec<f32> = cost.iter().map(|v| -v).collect();
-        let prices: Vec<f32> = vec![0_f32; n];
-        let row4col: Vec<usize> = vec![usize::MAX; n];
-        let col4row: Vec<usize> = vec![usize::MAX; n];
-        let unassigned: Vec<usize> = Vec::from_iter(0..n);
+    fn new(cost: &[f32], nrow: usize, ncol: usize, epsilon: Option<f32>) -> Self {
+        assert!(nrow <= ncol);
+        let (profit, max_val) = create_profit_vec(cost, nrow, ncol);
+        let prices: Vec<f32> = vec![0_f32; ncol];
+        let row4col: Vec<usize> = vec![usize::MAX; ncol];
+        let col4row: Vec<usize> = vec![usize::MAX; ncol];
+        let unassigned: Vec<usize> = Vec::from_iter(0..ncol);
         let epsilon = match epsilon {
             Some(eps) => eps,
-            None => {
-                let max_val = find_max(&profit);
-                (max_val.abs()).max(1.0)
-            }
+            None => (max_val).max(1.0),
         };
         Auctioner {
             profit,
@@ -73,7 +81,7 @@ impl Auctioner {
             row4col,
             col4row,
             unassigned,
-            n,
+            n: ncol,
             epsilon,
         }
     }
@@ -81,8 +89,8 @@ impl Auctioner {
     /// For a given `row`, return the first and second highest net profit.
     fn best_and_second(self: &Auctioner, row: usize) -> (usize, f32, f32) {
         let mut best_col = usize::MAX;
-        let mut best_val = f32::MIN;
-        let mut second_val = f32::MIN;
+        let mut best_val = f32::NEG_INFINITY;
+        let mut second_val = f32::NEG_INFINITY;
         for j in 0..self.n {
             let net = self.profit[row * self.n + j] - self.prices[j];
             if net > best_val {
@@ -112,7 +120,7 @@ impl Auctioner {
     /// 3. Assign row -> j*; evict the previously assigned row if any.
     fn bid_and_assign(self: &mut Auctioner, row: usize) -> usize {
         let (best_col, best_val, second_val) = self.best_and_second(row);
-        let gamma: f32 = if second_val == f32::MIN {
+        let gamma: f32 = if second_val == f32::NEG_INFINITY {
             best_val + self.epsilon
         } else {
             (best_val - second_val) + self.epsilon
@@ -154,16 +162,13 @@ impl Auctioner {
         self.col4row.fill(usize::MAX);
         self.unassigned.clear();
         self.unassigned.extend(0..self.n);
-        let max_iter = self.n * 100;
-        let mut iter = 0;
-        while !self.unassigned.is_empty() && (iter < max_iter) {
+        while !self.unassigned.is_empty() {
             if let Some(row) = self.unassigned.pop() {
                 let evicted = self.bid_and_assign(row);
                 if evicted != usize::MAX {
                     self.unassigned.push(evicted);
                 }
             }
-            iter += 1;
         }
     }
 
@@ -173,16 +178,13 @@ impl Auctioner {
         self.col4row.fill(usize::MAX);
         self.unassigned.clear();
         self.unassigned.extend(0..self.n);
-        let max_iter = self.n * 100;
-        let mut iter = 0;
-        while !self.unassigned.is_empty() && (iter < max_iter) {
+        while !self.unassigned.is_empty() {
             if let Some(row) = self.unassigned.pop() {
                 let evicted = self.bid_and_assign_simd(row, arch);
                 if evicted != usize::MAX {
                     self.unassigned.push(evicted);
                 }
             }
-            iter += 1;
         }
     }
 
@@ -332,11 +334,12 @@ impl WithSimd for BestAndSecond<'_> {
 /// ```
 /// use perfect_matching::csa::csa_scalar;
 /// let cost = vec![9_f32, 2., 7., 3., 6., 1., 5., 8., 4.];
-/// assert_eq!(csa_scalar(&cost, 3, None), vec![1, 2, 0]);
+/// assert_eq!(csa_scalar(&cost, 3, 3, None), vec![1, 2, 0]);
 /// ```
-pub fn csa_scalar(c: &[f32], nrow: usize, epsilon: Option<f32>) -> Vec<usize> {
-    let mut auctioner = Auctioner::new(c, nrow, epsilon);
+pub fn csa_scalar(c: &[f32], nrow: usize, ncol: usize, epsilon: Option<f32>) -> Vec<usize> {
+    let mut auctioner = Auctioner::new(c, nrow, ncol, epsilon);
     auctioner.solve();
+    auctioner.row4col.truncate(nrow);
     auctioner.row4col
 }
 
@@ -358,24 +361,26 @@ pub fn csa_scalar(c: &[f32], nrow: usize, epsilon: Option<f32>) -> Vec<usize> {
 /// ```
 /// use perfect_matching::csa::csa_simd;
 /// let cost = vec![9_f32, 2., 7., 3., 6., 1., 5., 8., 4.];
-/// assert_eq!(csa_simd(&cost, 3, None), vec![1, 2, 0]);
+/// assert_eq!(csa_simd(&cost, 3, 3, None), vec![1, 2, 0]);
 /// ```
-pub fn csa_simd(c: &[f32], nrow: usize, epsilon: Option<f32>) -> Vec<usize> {
+pub fn csa_simd(c: &[f32], nrow: usize, ncol: usize, epsilon: Option<f32>) -> Vec<usize> {
     let arch = Arch::new();
-    let mut auctioner = Auctioner::new(c, nrow, epsilon);
+    let mut auctioner = Auctioner::new(c, nrow, ncol, epsilon);
     auctioner.solve_simd(arch);
+    auctioner.row4col.truncate(nrow);
     auctioner.row4col
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sapjv::lsap_scalar;
 
     #[test]
     fn test_csa_3x3() {
         let cost = vec![9_f32, 2., 7., 3., 6., 1., 5., 8., 4.];
-        assert_eq!(csa_scalar(&cost, 3, None), vec![1, 2, 0]);
-        assert_eq!(csa_simd(&cost, 3, None), vec![1, 2, 0]);
+        assert_eq!(csa_scalar(&cost, 3, 3, None), vec![1, 2, 0]);
+        assert_eq!(csa_simd(&cost, 3, 3, None), vec![1, 2, 0]);
     }
 
     #[test]
@@ -383,7 +388,74 @@ mod tests {
         let cost = vec![
             10_f32, 5., 13., 8., 4., 12., 7., 3., 9., 2., 11., 6., 6., 8., 4., 10.,
         ];
-        assert_eq!(csa_scalar(&cost, 4, None), vec![3, 0, 1, 2]);
-        assert_eq!(csa_simd(&cost, 4, None), vec![3, 0, 1, 2]);
+        assert_eq!(csa_scalar(&cost, 4, 4, None), vec![3, 0, 1, 2]);
+        assert_eq!(csa_simd(&cost, 4, 4, None), vec![3, 0, 1, 2]);
+    }
+    #[test]
+    fn test_compare_rectangular() {
+        let n = 5;
+        let m = 10;
+        let cost: Vec<f32> = vec![
+            1.0,
+            1.0,
+            1.0,
+            0.7215317,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            0.054158,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            0.054158,
+            1.0,
+            0.4043231,
+            1.0,
+            0.58063513,
+            0.76297885,
+            1.0,
+            0.8444383,
+            0.45527098,
+            1.0,
+            0.115026936,
+            0.8503484,
+            1.0,
+            0.97878474,
+            0.7538884,
+            1.0,
+            1.0,
+            0.39926726,
+            0.69954103,
+            1.0,
+            0.41092402,
+            1.0,
+            0.7518769,
+            1.0,
+            1.0,
+            0.91052717,
+            0.015922515,
+            0.107834205,
+            1.0,
+            0.6891034,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            0.81491077,
+            0.17693532,
+            1.0,
+            0.47171637,
+            0.5047016,
+            0.5941265,
+            1.0,
+        ];
+
+        let cols_lsap = lsap_scalar(&cost, n, m);
+        let cols_csa = csa_scalar(&cost, n, m, None);
+        assert_eq!(cols_lsap, cols_csa);
     }
 }
