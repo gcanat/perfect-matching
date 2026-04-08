@@ -3,8 +3,8 @@
 //! Linear Sum Assignments problem.
 //!
 //! It currently implements the following algorithms:
-//! - Jonker-Volgenant
-//! - Cost Scaling Auction
+//! - Jonker-Volgenant: very fast for rectangular matrices
+//! - Cost Scaling Auction: very fast for square matrices
 //!
 //! # Example
 //! ```
