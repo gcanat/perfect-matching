@@ -1,12 +1,14 @@
+//! Jonker-Volgenant LAP algorithm for the Linear Sum Assignment problem.
+//!
+//! Based on: Crouse, "On implementing 2D rectangular assignment algorithms",
+//! <https://ui.adsabs.harvard.edu/abs/2016ITAES..52.1679C/abstract>
+//! Given `J` jobs and `W` workers (`J <= W`), computes the minimum cost to assign each jobs
+//! to distinct workers.
+//!
 use bytemuck::cast_slice;
 use pulp::{Arch, Simd, WithSimd};
 
-/// Shortest Augmenting Path algorithm for the Linear Sum Assignment Problem.
-///
-/// Based on: Crouse, "On implementing 2D rectangular assignment algorithms",
-/// https://ui.adsabs.harvard.edu/abs/2016ITAES..52.1679C/abstract
-/// Given `J` jobs and `W` workers (`J <= W`), computes the minimum cost to assign each jobs
-/// to distinct workers.
+/// Jonker-Volgenant solver in pure Rust.
 ///
 /// # Arguments
 /// * `c` - A slice representing a `J x W` cost matrix where `c[j][w]` is the cost to
@@ -109,7 +111,7 @@ where
     col4row
 }
 
-/// SIMD implementation for LSAP
+/// SIMD implementation for the inner scan in JV algorithm.
 struct InnerScan<'a> {
     c_row: &'a [f32],
     v: &'a [f32],
@@ -247,12 +249,7 @@ impl WithSimd for InnerScan<'_> {
     }
 }
 
-/// Shortest Augmenting Path algorithm with SIMD instructions for the Linear Sum Assignment Problem.
-///
-/// Based on: Crouse, "On implementing 2D rectangular assignment algorithms",
-/// https://ui.adsabs.harvard.edu/abs/2016ITAES..52.1679C/abstract
-/// Given `J` jobs and `W` workers (`J <= W`), computes the minimum cost to assign each jobs
-/// to distinct workers.
+/// Jonker-Volgenant solver using SIMD instructions.
 ///
 /// # Arguments
 /// * `c` - A slice representing a `J x W` cost matrix where `c[j][w]` is the cost to
