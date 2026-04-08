@@ -455,7 +455,7 @@ mod tests {
         ];
 
         let cols_lsap = lsap_scalar(&cost, n, m);
-        let cols_csa = csa_scalar(&cost, n, m, None);
+        let cols_csa = csa_scalar(&cost, n, m, Some(0.5));
         assert_eq!(cols_lsap, cols_csa);
     }
 }
