@@ -1,4 +1,4 @@
-name: Rustfmt and Clippy check
+name: Rustfmt, Clippy and Tests
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -31,3 +31,5 @@ jobs:
       - name: Clippy
         run: cargo clippy --all -- -D warnings
 
+      - name: Tests
+        run: cargo test
