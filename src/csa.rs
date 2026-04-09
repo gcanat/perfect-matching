@@ -20,6 +20,7 @@
 //! epsilon is divided by `ALPHA` each phase until `epsilon < max(1/n^2, 1e-6)`
 
 use bytemuck::cast_slice;
+use num_traits::ToPrimitive;
 use pulp::{Arch, Simd, WithSimd};
 
 // Scaling factor for epsilon
@@ -32,11 +33,14 @@ const MIN_EPS_THRESH: f32 = 1e-7;
 /// If nrow < ncol, dummy rows (with very low profit) are appended to make
 /// the profit matrix square (ncol x ncol), so the auction always operates
 /// on a square problem.
-fn create_profit_vec(cost: &[f32], nrow: usize, ncol: usize) -> (Vec<f32>, f32) {
+fn create_profit_vec<T>(cost: &[T], nrow: usize, ncol: usize) -> (Vec<f32>, f32)
+where
+    T: Copy + ToPrimitive,
+{
     let mut profit = Vec::with_capacity(ncol * ncol);
     let mut max_profit = f32::MIN;
     for v in cost.iter() {
-        let neg_val = -v;
+        let neg_val = -v.to_f32().expect("cost value not representable as f32");
         profit.push(neg_val);
         let abs_val = neg_val.abs();
         if (abs_val < f32::MAX) && (abs_val > max_profit) {
@@ -64,7 +68,10 @@ struct Auctioner {
 impl Auctioner {
     /// Create a new `Auctioner` given a `cost` vector, the number of rows and cols
     /// an optional `epsilon` start value.
-    fn new(cost: &[f32], nrow: usize, ncol: usize, epsilon: Option<f32>) -> Self {
+    fn new<T>(cost: &[T], nrow: usize, ncol: usize, epsilon: Option<f32>) -> Self
+    where
+        T: Copy + ToPrimitive,
+    {
         assert!(nrow <= ncol);
         let (profit, max_val) = create_profit_vec(cost, nrow, ncol);
         let prices: Vec<f32> = vec![0_f32; ncol];
@@ -335,8 +342,13 @@ impl WithSimd for BestAndSecond<'_> {
 /// use perfect_matching::csa::csa_scalar;
 /// let cost = vec![9_f32, 2., 7., 3., 6., 1., 5., 8., 4.];
 /// assert_eq!(csa_scalar(&cost, 3, 3, None), vec![1, 2, 0]);
+/// let cost_i32 = vec![9_i32, 2, 7, 3, 6, 1, 5, 8, 4];
+/// assert_eq!(csa_scalar(&cost_i32, 3, 3, None), vec![1, 2, 0]);
 /// ```
-pub fn csa_scalar(c: &[f32], nrow: usize, ncol: usize, epsilon: Option<f32>) -> Vec<usize> {
+pub fn csa_scalar<T>(c: &[T], nrow: usize, ncol: usize, epsilon: Option<f32>) -> Vec<usize>
+where
+    T: Copy + ToPrimitive,
+{
     let mut auctioner = Auctioner::new(c, nrow, ncol, epsilon);
     auctioner.solve();
     auctioner.row4col.truncate(nrow);
@@ -362,8 +374,13 @@ pub fn csa_scalar(c: &[f32], nrow: usize, ncol: usize, epsilon: Option<f32>) -> 
 /// use perfect_matching::csa::csa_simd;
 /// let cost = vec![9_f32, 2., 7., 3., 6., 1., 5., 8., 4.];
 /// assert_eq!(csa_simd(&cost, 3, 3, None), vec![1, 2, 0]);
+/// let cost_i32 = vec![9_i32, 2, 7, 3, 6, 1, 5, 8, 4];
+/// assert_eq!(csa_simd(&cost_i32, 3, 3, None), vec![1, 2, 0]);
 /// ```
-pub fn csa_simd(c: &[f32], nrow: usize, ncol: usize, epsilon: Option<f32>) -> Vec<usize> {
+pub fn csa_simd<T>(c: &[T], nrow: usize, ncol: usize, epsilon: Option<f32>) -> Vec<usize>
+where
+    T: Copy + ToPrimitive,
+{
     let arch = Arch::new();
     let mut auctioner = Auctioner::new(c, nrow, ncol, epsilon);
     auctioner.solve_simd(arch);
@@ -377,20 +394,37 @@ mod tests {
     use crate::sapjv::lsap_scalar;
 
     #[test]
-    fn test_csa_3x3() {
-        let cost = vec![9_f32, 2., 7., 3., 6., 1., 5., 8., 4.];
+    fn test_csa_3x3_i64() {
+        let cost = vec![9_i64, 2, 7, 3, 6, 1, 5, 8, 4];
         assert_eq!(csa_scalar(&cost, 3, 3, None), vec![1, 2, 0]);
         assert_eq!(csa_simd(&cost, 3, 3, None), vec![1, 2, 0]);
     }
 
     #[test]
-    fn test_csa_4x4() {
+    fn test_csa_3x3_i32() {
+        let cost = vec![9_i32, 2, 7, 3, 6, 1, 5, 8, 4];
+        assert_eq!(csa_scalar(&cost, 3, 3, None), vec![1, 2, 0]);
+        assert_eq!(csa_simd(&cost, 3, 3, None), vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn test_csa_4x4_f32() {
         let cost = vec![
             10_f32, 5., 13., 8., 4., 12., 7., 3., 9., 2., 11., 6., 6., 8., 4., 10.,
         ];
         assert_eq!(csa_scalar(&cost, 4, 4, None), vec![3, 0, 1, 2]);
         assert_eq!(csa_simd(&cost, 4, 4, None), vec![3, 0, 1, 2]);
     }
+
+    #[test]
+    fn test_csa_4x4_f64() {
+        let cost = vec![
+            10_f64, 5., 13., 8., 4., 12., 7., 3., 9., 2., 11., 6., 6., 8., 4., 10.,
+        ];
+        assert_eq!(csa_scalar(&cost, 4, 4, None), vec![3, 0, 1, 2]);
+        assert_eq!(csa_simd(&cost, 4, 4, None), vec![3, 0, 1, 2]);
+    }
+
     #[test]
     fn test_compare_rectangular() {
         let n = 5;
