@@ -19,8 +19,10 @@
 //! A full auction round (phase) works at a fixed epsilon.
 //! epsilon is divided by `ALPHA` each phase until `epsilon < max(1/n^2, 1e-6)`
 
+#[cfg(feature = "simd")]
 use bytemuck::cast_slice;
 use num_traits::ToPrimitive;
+#[cfg(feature = "simd")]
 use pulp::{Arch, Simd, WithSimd};
 
 // Scaling factor for epsilon
@@ -112,6 +114,7 @@ impl Auctioner {
     }
 
     /// SIMD version of `best_and_second`.
+    #[cfg(feature = "simd")]
     fn best_and_second_simd(&self, row: usize, arch: Arch) -> (usize, f32, f32) {
         let result = arch.dispatch(BestAndSecond {
             profit_row: &self.profit[row * self.n..(row + 1) * self.n],
@@ -144,6 +147,7 @@ impl Auctioner {
     }
 
     /// SIMD version of `bid_and_assign`.
+    #[cfg(feature = "simd")]
     fn bid_and_assign_simd(&mut self, row: usize, arch: Arch) -> usize {
         let (best_col, best_val, second_val) = self.best_and_second_simd(row, arch);
         let gamma: f32 = if second_val == f32::NEG_INFINITY {
@@ -180,6 +184,7 @@ impl Auctioner {
     }
 
     /// SIMD version of `run_phase`.
+    #[cfg(feature = "simd")]
     fn run_phase_simd(&mut self, arch: Arch) {
         self.row4col.fill(usize::MAX);
         self.col4row.fill(usize::MAX);
@@ -207,6 +212,7 @@ impl Auctioner {
     }
 
     /// SIMD version of `solve`.
+    #[cfg(feature = "simd")]
     fn solve_simd(&mut self, arch: Arch) {
         let nn = (self.n as f32).powi(2);
         let eps_thresh = (MIN_EPS_THRESH).max(1.0 / nn);
@@ -219,17 +225,20 @@ impl Auctioner {
 
 /// SIMD kernel: finds the best and second-best `profit_row[j] - prices[j]`
 /// across all columns, returning the argmax and both values.
+#[cfg(feature = "simd")]
 struct BestAndSecond<'a> {
     profit_row: &'a [f32],
     prices: &'a [f32],
 }
 
+#[cfg(feature = "simd")]
 struct TopTwo {
     best_col: usize,
     best_val: f32,
     second_val: f32,
 }
 
+#[cfg(feature = "simd")]
 impl WithSimd for BestAndSecond<'_> {
     type Output = TopTwo;
 
@@ -377,6 +386,7 @@ where
 /// let cost_i32 = vec![9_i32, 2, 7, 3, 6, 1, 5, 8, 4];
 /// assert_eq!(csa_simd(&cost_i32, 3, 3, None), vec![1, 2, 0]);
 /// ```
+#[cfg(feature = "simd")]
 pub fn csa_simd<T>(c: &[T], nrow: usize, ncol: usize, epsilon: Option<f32>) -> Vec<usize>
 where
     T: Copy + ToPrimitive,
@@ -397,6 +407,7 @@ mod tests {
     fn test_csa_3x3_i64() {
         let cost = vec![9_i64, 2, 7, 3, 6, 1, 5, 8, 4];
         assert_eq!(csa_scalar(&cost, 3, 3, None), vec![1, 2, 0]);
+        #[cfg(feature = "simd")]
         assert_eq!(csa_simd(&cost, 3, 3, None), vec![1, 2, 0]);
     }
 
@@ -404,6 +415,7 @@ mod tests {
     fn test_csa_3x3_i32() {
         let cost = vec![9_i32, 2, 7, 3, 6, 1, 5, 8, 4];
         assert_eq!(csa_scalar(&cost, 3, 3, None), vec![1, 2, 0]);
+        #[cfg(feature = "simd")]
         assert_eq!(csa_simd(&cost, 3, 3, None), vec![1, 2, 0]);
     }
 
@@ -413,6 +425,7 @@ mod tests {
             10_f32, 5., 13., 8., 4., 12., 7., 3., 9., 2., 11., 6., 6., 8., 4., 10.,
         ];
         assert_eq!(csa_scalar(&cost, 4, 4, None), vec![3, 0, 1, 2]);
+        #[cfg(feature = "simd")]
         assert_eq!(csa_simd(&cost, 4, 4, None), vec![3, 0, 1, 2]);
     }
 
@@ -422,6 +435,7 @@ mod tests {
             10_f64, 5., 13., 8., 4., 12., 7., 3., 9., 2., 11., 6., 6., 8., 4., 10.,
         ];
         assert_eq!(csa_scalar(&cost, 4, 4, None), vec![3, 0, 1, 2]);
+        #[cfg(feature = "simd")]
         assert_eq!(csa_simd(&cost, 4, 4, None), vec![3, 0, 1, 2]);
     }
 
