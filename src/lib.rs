@@ -5,6 +5,7 @@
 //! It currently implements the following algorithms:
 //! - Jonker-Volgenant: very fast for rectangular matrices
 //! - Cost Scaling Auction: very fast for square matrices
+//! - Kuhn-Munkres: classical hungarian matching
 //!
 //! # Example
 //! ```
@@ -13,4 +14,5 @@
 //! assert_eq!(lsap_scalar(&costs, 2, 3), vec![1, 0]);
 //! ```
 pub mod csa;
+pub mod hun;
 pub mod sapjv;
