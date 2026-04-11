@@ -5,7 +5,9 @@
 //! Given `J` jobs and `W` workers (`J <= W`), computes the minimum cost to assign each jobs
 //! to distinct workers.
 //!
+#[cfg(feature = "simd")]
 use bytemuck::cast_slice;
+#[cfg(feature = "simd")]
 use pulp::{Arch, Simd, WithSimd};
 
 /// Jonker-Volgenant solver in pure Rust.
@@ -111,7 +113,7 @@ where
     col4row
 }
 
-/// SIMD implementation for the inner scan in JV algorithm.
+#[cfg(feature = "simd")]
 struct InnerScan<'a> {
     c_row: &'a [f32],
     v: &'a [f32],
@@ -124,11 +126,13 @@ struct InnerScan<'a> {
     row_i: u32,
 }
 
+#[cfg(feature = "simd")]
 struct ScanResult {
     pub best_cost: f32,
     pub best_col: usize,
 }
 
+#[cfg(feature = "simd")]
 impl WithSimd for InnerScan<'_> {
     type Output = ScanResult;
 
@@ -269,6 +273,7 @@ impl WithSimd for InnerScan<'_> {
 /// let assignments = lsap_simd(&costs, 3, 3);
 /// assert_eq!(assignments, vec![0, 2, 1]);
 /// ```
+#[cfg(feature = "simd")]
 pub fn lsap_simd(c: &[f32], nrow: usize, ncol: usize) -> Vec<usize> {
     assert!(nrow <= ncol);
 
@@ -361,17 +366,17 @@ mod tests {
     #[test]
     fn test_identical_costs() {
         let cost_matrix = vec![1.0_f32, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
-        let asgmt = lsap_scalar(&cost_matrix, 3, 3);
-        let asgmt_simd = lsap_simd(&cost_matrix, 3, 3);
         // all costs are equal: matches are made starting from the end
-        assert_eq!(asgmt, vec![2, 1, 0]);
-        assert_eq!(asgmt_simd, vec![2, 1, 0]);
+        assert_eq!(lsap_scalar(&cost_matrix, 3, 3), vec![2, 1, 0]);
+        #[cfg(feature = "simd")]
+        assert_eq!(lsap_simd(&cost_matrix, 3, 3), vec![2, 1, 0]);
     }
 
     #[test]
     fn test_known_assignment() {
         let costs_f32 = vec![8_f32, 5., 9., 4., 2., 4., 7., 3., 8.];
         assert_eq!(lsap_scalar(&costs_f32, 3, 3), vec![0, 2, 1]);
+        #[cfg(feature = "simd")]
         assert_eq!(lsap_simd(&costs_f32, 3, 3), vec![0, 2, 1]);
 
         let costs_i64 = vec![8_i64, 5, 9, 4, 2, 4, 7, 3, 8];
@@ -382,6 +387,7 @@ mod tests {
     fn test_single_element() {
         let costs = vec![42.0_f32];
         assert_eq!(lsap_scalar(&costs, 1, 1), vec![0]);
+        #[cfg(feature = "simd")]
         assert_eq!(lsap_simd(&costs, 1, 1), vec![0]);
     }
 
@@ -389,6 +395,7 @@ mod tests {
     fn test_rectangular() {
         let costs = vec![3.0_f32, 1., 2., 1., 3., 2.];
         assert_eq!(lsap_scalar(&costs, 2, 3), vec![1, 0]);
+        #[cfg(feature = "simd")]
         assert_eq!(lsap_simd(&costs, 2, 3), vec![1, 0]);
     }
 
@@ -396,6 +403,7 @@ mod tests {
     fn test_optimal_in_diagonal() {
         let costs = vec![0.0_f32, 1., 1., 1., 0., 1., 1., 1., 0.];
         assert_eq!(lsap_scalar(&costs, 3, 3), vec![0, 1, 2]);
+        #[cfg(feature = "simd")]
         assert_eq!(lsap_simd(&costs, 3, 3), vec![0, 1, 2]);
     }
 }

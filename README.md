@@ -7,6 +7,11 @@ Two versions are available:
 - `lsap_scalar`: straight forward implementation
 - `lsap_simd`: SIMD accelerated implementation
 
+To enable the SIMD implementations, you need to compile with `simd` feature:
+```sh
+cargo build -r --features simd
+```
+
 Other algorithms available:
 - Cost Scaling Auction algorithm: similar to lsap, scalar and simd versions are available. Very fast for dense square cost matrices.
 - Kuhn-Munkres aglorithm (aka Hungarian Matching): classical algorithm, works with integer cost matrices. Slower than other algorithms.
