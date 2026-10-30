@@ -197,23 +197,23 @@ impl WithSimd for InnerScan<'_> {
             // spc[j] = min(spc[j], r)  for unvisited lanes only
             let old_spc_v = *spc_v;
             let new_spc = simd.min_f32s(*spc_v, r);
-            *spc_v = simd.select_f32s_m32s(is_visited, *spc_v, new_spc);
+            *spc_v = simd.select_f32s(is_visited, *spc_v, new_spc);
 
             // path[j] = row_i  where r improved spc AND lane is unvisited
             let improved = simd.less_than_f32s(r, old_spc_v);
             let update_path = simd.and_m32s(simd.not_m32s(is_visited), improved);
-            *path_v = simd.select_u32s_m32s(update_path, row_v, *path_v);
+            *path_v = simd.select_u32s(update_path, row_v, *path_v);
 
             // For argmin: mask visited lanes out with infinity
-            let cost_for_min = simd.select_f32s_m32s(is_visited, inf_v, *spc_v);
+            let cost_for_min = simd.select_f32s(is_visited, inf_v, *spc_v);
 
             // Column indices for this chunk: iota + base
             let col_indices = simd.add_u32s(iota, simd.splat_u32s(base as u32));
 
             // Update running per-lane argmin
             let new_is_better = simd.less_than_f32s(cost_for_min, best_cost_v);
-            best_cost_v = simd.select_f32s_m32s(new_is_better, cost_for_min, best_cost_v);
-            best_col_v = simd.select_u32s_m32s(new_is_better, col_indices, best_col_v);
+            best_cost_v = simd.select_f32s(new_is_better, cost_for_min, best_cost_v);
+            best_col_v = simd.select_u32s(new_is_better, col_indices, best_col_v);
         }
 
         // Horizontal reduction: fold SIMD lanes down to a scalar argmin

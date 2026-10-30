@@ -281,10 +281,10 @@ impl WithSimd for BestAndSecond<'_> {
 
             // second = if update_best { old best } else { max(second, net) }
             let new_second = simd.max_f32s(second_v, net);
-            second_v = simd.select_f32s_m32s(update_best, best_v, new_second);
+            second_v = simd.select_f32s(update_best, best_v, new_second);
 
             best_v = simd.max_f32s(best_v, net);
-            best_col_v = simd.select_u32s_m32s(update_best, col_indices, best_col_v);
+            best_col_v = simd.select_u32s(update_best, col_indices, best_col_v);
         }
 
         // Horizontal reduction: collapse per-lane vectors to scalar top-2.
